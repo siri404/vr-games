@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VR Gallery Shooter</title>
+    <meta name="description" content="A simple VR gallery shooter game using A-Frame.">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script>
+        // Component to make targets pop up and disappear
+        AFRAME.registerComponent('target', {
+            schema: {
+                active: {type: 'boolean', default: true}
+            },
+
+            init: function () {
+                this.el.setAttribute('visible', false);
+                this.respawn();
+
+                this.el.addEventListener('click', () => {
+                    if (this.data.active) {
+                        const scoreEl = document.querySelector('#score-text');
+                        let score = parseInt(scoreEl.getAttribute('value').split(' ')[1]);
+                        score++;
+                        scoreEl.setAttribute('value', `Score: ${score}`);
+                        this.data.active = false;
+                        this.el.setAttribute('visible', false);
+                        
+                        // Play a sound on hit
+                        const sound = document.querySelector('#hit-sound');
+                        sound.components.sound.playSound();
+
+                        // Respawn after a delay
+                        setTimeout(() => this.respawn(), 1000);
+                    }
+                });
+            },
+
+            respawn: function () {
+                const x = (Math.random() - 0.5) * 10;
+                const y = Math.random() * 2 + 1;
+                const z = - (Math.random() * 5 + 5);
+                this.el.setAttribute('position', `${x} ${y} ${z}`);
+                this.el.setAttribute('visible', true);
+                this.data.active = true;
+            }
+        });
+    </script>
+</head>
+<body>
+    <a-scene background="color: #222">
+        <!-- Assets -->
+        <a-assets>
+             <audio id="hit-sound" src="https://cdn.glitch.global/b43d7c51-3a93-458c-813a-0e53a3d54848/hit.mp3?v=1690829910502" preload="auto"></audio>
+        </a-assets>
+
+        <!-- Camera with controller support -->
+        <a-entity id="player">
+            <a-camera>
+                <a-cursor color="#FFD700"></a-cursor>
+            </a-camera>
+            <a-entity oculus-touch-controls="hand: left"></a-entity>
+            <a-entity oculus-touch-controls="hand: right" laser-controls="hand: right"></a-entity>
+        </a-entity>
+
+        <!-- Score Text -->
+        <a-text id="score-text" value="Score: 0" position="-1.5 3 -4" color="#FFFFFF" width="4"></a-text>
+
+        <!-- Targets -->
+        <a-sphere target color="#FF6347" radius="0.5"></a-sphere>
+        <a-box target color="#4682B4" depth="0.5" height="0.5" width="0.5"></a-box>
+        <a-cylinder target color="#32CD32" radius="0.3" height="0.8"></a-cylinder>
+        <a-dodecahedron target color="#FFC0CB" radius="0.4"></a-dodecahedron>
+        <a-octahedron target color="#9370DB" radius="0.4"></a-octahedron>
+
+
+        <!-- Environment -->
+        <a-plane position="0 0 -4" rotation="-90 0 0" width="20" height="20" color="#7BC8A4"></a-plane>
+        <a-sky color="#ECECEC"></a-sky>
+
+    </a-scene>
+</body>
+</html>
