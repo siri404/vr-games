@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VR Fruit Slicer</title>
+    <meta name="description" content="A fruit slicing game in VR using A-Frame.">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script>
+        // Constants
+        const GRAVITY = -9.8;
+        const SLICE_IMPULSE = 3;
+
+        // Utility to get a random float between two values
+        function randomFloat(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        /**
+         * Component for individual fruits. Manages movement, slicing, and removal.
+         */
+        AFRAME.registerComponent('fruit', {
+            schema: {
+                // Defines the type of fruit, affecting its shape and color
+                type: {type: 'string', default: 'apple'},
+                // Tracks if the fruit has been sliced
+                sliced: {type: 'boolean', default: false}
+            },
+
+            init: function () {
+                this.el.setAttribute('visible', true);
+                this.velocity = new THREE.Vector3(
+                    randomFloat(-1, 1),
+                    randomFloat(4, 6),
+                    randomFloat(-1, 0)
+                );
+                this.angularVelocity = new THREE.Vector3(
+                    randomFloat(-2, 2),
+                    randomFloat(-2, 2),
+                    randomFloat(-2, 2)
+                );
+
+                // Event listener for when a slicer intersects the fruit
+                this.el.addEventListener('raycaster-intersected', (evt) => {
+                    if (evt.detail.el.classList.contains('slicer')) {
+                        this.slice(evt.detail.el);
+                    }
+                });
+            },
+
+            tick: function (time, timeDelta) {
+                if (this.data.sliced) return;
+
+                const dt = timeDelta / 1000;
+
+                // Apply gravity
+                this.velocity.y += GRAVITY * dt;
+
+                // Update position
+                this.el.object3D.position.x += this.velocity.x * dt;
+                this.el.object3D.position.y += this.velocity.y * dt;
+                this.el.object3D.position.z += this.velocity.z * dt;
+
+                // Update rotation
+                this.el.object3D.rotation.x += this.angularVelocity.x * dt;
+                this.el.object3D.rotation.y += this.angularVelocity.y * dt;
+                this.el.object3D.rotation.z += this.angularVelocity.z * dt;
+
+                // Remove if it falls out of view
+                if (this.el.object3D.position.y < -1) {
+                    this.el.parentNode.removeChild(this.el);
+                }
+            },
+
+            slice: function (slicerEl) {
+                if (this.data.sliced) return;
+                this.data.sliced = true;
+                
+                // Hide original fruit
+                this.el.setAttribute('visible', false);
+
+                // Update score
+                const scoreEl = document.querySelector('#score-text');
+                let score = parseInt(scoreEl.getAttribute('value').split(' ')[1]);
+                score++;
+                scoreEl.setAttribute('value', `Score: ${score}`);
+                
+                // Play sound
+                const sound = document.querySelector('#slice-sound');
+                sound.components.sound.playSound();
+
+                // Create two halves
+                const slicerDirection = slicerEl.object3D.getWorldDirection(new THREE.Vector3());
+                const sliceNormal = slicerDirection.clone().cross(this.velocity).normalize();
+
+                for (let i = 0; i < 2; i++) {
+                    const half = document.createElement('a-entity');
+                    half.setAttribute('geometry', {
+                        primitive: 'hemisphere',
+                        radius: this.el.getAttribute('geometry').radius || 0.25,
+                    });
+                    half.setAttribute('material', `color: ${this.el.getAttribute('material').color}`);
+                    half.object3D.position.copy(this.el.object3D.position);
+                    half.object3D.quaternion.copy(this.el.object3D.quaternion);
+                    
+                    // Rotate hemisphere to align with slice
+                    const rotationAxis = new THREE.Vector3(0, 1, 0);
+                    half.object3D.quaternion.setFromUnitVectors(rotationAxis, sliceNormal);
+                    if (i === 1) {
+                         half.object3D.rotateZ(Math.PI);
+                    }
+
+                    this.el.sceneEl.appendChild(half);
+                    
+                    // Animate halves flying apart and disappearing
+                    const direction = (i === 0 ? 1 : -1);
+                    const impulse = sliceNormal.clone().multiplyScalar(SLICE_IMPULSE * direction * 0.2);
+                    
+                    half.setAttribute('animation', {
+                        property: 'position',
+                        to: `${half.object3D.position.x + impulse.x} ${half.object3D.position.y - 1} ${half.object3D.position.z + impulse.z}`,
+                        dur: 1500,
+                        easing: 'easeOutQuad'
+                    });
+                     half.setAttribute('animation__fade', {
+                        property: 'material.opacity',
+                        to: 0,
+                        dur: 1500,
+                        easing: 'easeInQuad'
+                    });
+
+                    // Remove halves after animation
+                    setTimeout(() => half.parentNode.removeChild(half), 1500);
+                }
+
+                // Remove original fruit entity
+                setTimeout(() => this.el.parentNode.removeChild(this.el), 1500);
+            }
+        });
+
+        /**
+         * Component to spawn fruits at regular intervals.
+         */
+        AFRAME.registerComponent('fruit-spawner', {
+            schema: {
+                interval: {type: 'number', default: 1000}, // ms
+            },
+            init: function () {
+                this.fruitTypes = [
+                    { primitive: 'sphere', radius: 0.25, color: '#FF6347' }, // Apple
+                    { primitive: 'dodecahedron', radius: 0.3, color: '#FFD700' }, // Lemon
+                    { primitive: 'box', width: 0.4, height: 0.25, depth: 0.2, color: '#32CD32' }, // Watermelon Slice
+                ];
+                this.timer = setInterval(this.spawnFruit.bind(this), this.data.interval);
+            },
+            spawnFruit: function () {
+                const fruitData = this.fruitTypes[Math.floor(Math.random() * this.fruitTypes.length)];
+                const fruit = document.createElement('a-entity');
+                
+                fruit.setAttribute('fruit', {});
+                fruit.setAttribute('geometry', fruitData);
+                fruit.setAttribute('material', { color: fruitData.color });
+
+                const xPos = randomFloat(-2, 2);
+                fruit.setAttribute('position', `${xPos} 0.5 -3`);
+                
+                this.el.sceneEl.appendChild(fruit);
+            },
+            remove: function() {
+                clearInterval(this.timer);
+            }
+        });
+    </script>
+</head>
+<body>
+    <a-scene background="color: #87CEEB">
+        <!-- Assets -->
+        <a-assets>
+             <audio id="slice-sound" src="https://cdn.glitch.global/b43d7c51-3a93-458c-813a-0e53a3d54848/slice.mp3?v=1690831690123" preload="auto"></audio>
+        </a-assets>
+
+        <!-- Player and Controllers -->
+        <a-entity id="player">
+            <a-camera position="0 1.6 0"></a-camera>
+            <!-- Left Hand Controller -->
+            <a-entity oculus-touch-controls="hand: left"></a-entity>
+            <!-- Right Hand Controller with Slicer Blade -->
+            <a-entity oculus-touch-controls="hand: right">
+                <a-entity class="slicer"
+                    raycaster="objects: [fruit]; showLine: false;"
+                    line="color: white; opacity: 0.5"
+                    position="0 0 -0.5"
+                    rotation="45 0 0">
+                    <a-box color="#E0E0E0" width="0.02" height="0.02" depth="1"></a-box>
+                </a-entity>
+            </a-entity>
+        </a-entity>
+
+        <!-- UI -->
+        <a-text id="score-text" value="Score: 0" position="-1 2.5 -3" color="#FFFFFF" width="3" align="center"></a-text>
+
+        <!-- Spawner -->
+        <a-entity fruit-spawner></a-entity>
+
+        <!-- Environment -->
+        <a-plane position="0 0 -4" rotation="-90 0 0" width="10" height="10" color="#7BC8A4" shadow></a-plane>
+        <a-light type="ambient" color="#BBB"></a-light>
+        <a-light type="directional" position="-1 1 1" intensity="0.8"></a-light>
+
+    </a-scene>
+</body>
+</html>
